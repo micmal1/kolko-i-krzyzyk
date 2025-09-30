@@ -18,6 +18,7 @@
 <h1>Kółko-Krzyżyk Online</h1>
 <input id="nameInput" placeholder="Twoja nazwa">
 <button id="joinBtn">Dołącz</button>
+<div id="statusText"></div>
 
 <div id="game" style="display:none;">
   <h2 id="opponent"></h2>
@@ -32,7 +33,6 @@
     <div class="cell" data-idx="7"></div>
     <div class="cell" data-idx="8"></div>
   </div>
-  <h3 id="status"></h3>
 </div>
 
 <script>
@@ -46,30 +46,30 @@
     messagingSenderId: "1038088392191",
     appId: "1:1038088392191:web:cb1f4fe0060e039d2f6bca"
   };
-  
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
   let playerName, playerSymbol, playerKey, gameKey, myTurn;
   const joinBtn = document.getElementById("joinBtn");
+  const statusText = document.getElementById("statusText");
 
   joinBtn.addEventListener("click", () => {
     playerName = document.getElementById("nameInput").value || "Anon";
     joinBtn.disabled = true;
     document.getElementById("nameInput").disabled = true;
 
+    statusText.innerText = "Szukanie przeciwnika..."; // pokazujemy status
+
     const queueRef = db.ref("queue");
     const playerRef = queueRef.push({name: playerName});
     playerKey = playerRef.key;
 
-    // Nasłuch nowych graczy w kolejce
     queueRef.on("child_added", snapshot => {
-      const players = snapshot.ref.parent; 
-      players.once("value").then(snap=>{
+      const players = snapshot.ref.parent;
+      players.once("value").then(snap => {
         const allPlayers = snap.val() || {};
         const keys = Object.keys(allPlayers);
         if(keys.length >= 2){
-          // Tworzymy grę
           const [p1Key, p2Key] = keys;
           gameKey = db.ref("games").push().key;
           db.ref("games/"+gameKey).set({
@@ -81,8 +81,9 @@
             }
           });
           db.ref("queue").remove();
-          if(playerKey === p1Key) startGame(gameKey, "X");
-          else if(playerKey === p2Key) startGame(gameKey, "O");
+          statusText.innerText = ""; // usuwamy "szukanie"
+          document.getElementById("game").style.display = "block";
+          startGame(gameKey, playerKey === p1Key ? "X" : "O");
         }
       });
     });
@@ -91,51 +92,9 @@
   function startGame(key, symbol){
     playerSymbol = symbol;
     gameKey = key;
-    gameRef = db.ref("games/"+gameKey);
+    const gameRef = db.ref("games/"+gameKey);
     myTurn = false;
 
-    document.getElementById("game").style.display = "block";
     const cells = document.querySelectorAll(".cell");
-    cells.forEach(cell=>{
+    cells.forEach(cell => {
       cell.addEventListener("click", ()=>{
-        if(!myTurn || cell.innerText) return;
-        gameRef.child("board/"+cell.dataset.idx).set(playerSymbol);
-      });
-    });
-
-    gameRef.on("value", snapshot=>{
-      const data = snapshot.val();
-      if(!data) return;
-      const board = data.board;
-      const turn = data.turn;
-      const players = data.players;
-      const opponentName = Object.values(players).filter(n=>n!==playerName)[0];
-      document.getElementById("opponent").innerText = "Przeciwnik: "+(opponentName||"Czekamy...");
-
-      board.forEach((val,i)=>cells[i].innerText=val);
-      myTurn = Object.keys(players)[playerSymbol==="X"?0:1]===turn;
-      document.getElementById("status").innerText = myTurn ? "Twoja tura" : "Tura przeciwnika";
-
-      const winner = checkWinner(board);
-      if(winner){
-        if(winner==="Draw") alert("Remis!");
-        else if(winner===playerSymbol) alert("Wygrałeś!");
-        else alert("Przegrałeś!");
-        gameRef.remove();
-        location.reload();
-      }
-    });
-  }
-
-  function checkWinner(b){
-    const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    for(const [a,b1,c] of wins){
-      if(b[a] && b[a]===b[b1] && b[a]===b[c]) return b[a];
-    }
-    if(b.every(cell=>cell)) return "Draw";
-    return null;
-  }
-</script>
-
-</body>
-</html>
