@@ -50,63 +50,67 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  let playerName, playerSymbol, gameRef, myTurn, playerKey;
+  let playerName, playerSymbol, playerKey, gameKey, myTurn;
+  const joinBtn = document.getElementById("joinBtn");
 
-  document.getElementById("joinBtn").addEventListener("click", () => {
+  joinBtn.addEventListener("click", () => {
     playerName = document.getElementById("nameInput").value || "Anon";
+    joinBtn.disabled = true;
+    document.getElementById("nameInput").disabled = true;
+
     const queueRef = db.ref("queue");
     const playerRef = queueRef.push({name: playerName});
     playerKey = playerRef.key;
 
-    document.getElementById("joinBtn").disabled = true;
-    document.getElementById("nameInput").disabled = true;
-
-    // Nasłuchujemy kolejki
-    queueRef.on("value", snapshot => {
-      const players = snapshot.val() || {};
-      const keys = Object.keys(players);
-
-      if(keys.length >= 2){
-        const [p1Key, p2Key] = keys;
-        const gameKey = db.ref("games").push().key;
-
-        db.ref("games/"+gameKey).set({
-          board: Array(9).fill(""),
-          turn: p1Key,
-          players: {
-            [p1Key]: players[p1Key].name,
-            [p2Key]: players[p2Key].name
-          }
-        });
-
-        db.ref("queue").remove(); // czyścimy kolejkę
-        startGame(gameKey, p1Key === playerKey ? "X" : "O");
-      }
+    // Nasłuch nowych graczy w kolejce
+    queueRef.on("child_added", snapshot => {
+      const players = snapshot.ref.parent; 
+      players.once("value").then(snap=>{
+        const allPlayers = snap.val() || {};
+        const keys = Object.keys(allPlayers);
+        if(keys.length >= 2){
+          // Tworzymy grę
+          const [p1Key, p2Key] = keys;
+          gameKey = db.ref("games").push().key;
+          db.ref("games/"+gameKey).set({
+            board: Array(9).fill(""),
+            turn: p1Key,
+            players: {
+              [p1Key]: allPlayers[p1Key].name,
+              [p2Key]: allPlayers[p2Key].name
+            }
+          });
+          db.ref("queue").remove();
+          if(playerKey === p1Key) startGame(gameKey, "X");
+          else if(playerKey === p2Key) startGame(gameKey, "O");
+        }
+      });
     });
   });
 
-  function startGame(gameKey, symbol) {
+  function startGame(key, symbol){
     playerSymbol = symbol;
+    gameKey = key;
     gameRef = db.ref("games/"+gameKey);
     myTurn = false;
-    document.getElementById("game").style.display = "block";
 
+    document.getElementById("game").style.display = "block";
     const cells = document.querySelectorAll(".cell");
-    cells.forEach(cell => {
-      cell.addEventListener("click", () => {
+    cells.forEach(cell=>{
+      cell.addEventListener("click", ()=>{
         if(!myTurn || cell.innerText) return;
         gameRef.child("board/"+cell.dataset.idx).set(playerSymbol);
       });
     });
 
-    gameRef.on("value", snapshot => {
+    gameRef.on("value", snapshot=>{
       const data = snapshot.val();
       if(!data) return;
       const board = data.board;
       const turn = data.turn;
       const players = data.players;
-      const opponentName = Object.values(players).filter(n => n!==playerName)[0];
-      document.getElementById("opponent").innerText = "Przeciwnik: " + (opponentName || "Czekamy...");
+      const opponentName = Object.values(players).filter(n=>n!==playerName)[0];
+      document.getElementById("opponent").innerText = "Przeciwnik: "+(opponentName||"Czekamy...");
 
       board.forEach((val,i)=>cells[i].innerText=val);
       myTurn = Object.keys(players)[playerSymbol==="X"?0:1]===turn;
@@ -118,7 +122,7 @@
         else if(winner===playerSymbol) alert("Wygrałeś!");
         else alert("Przegrałeś!");
         gameRef.remove();
-        location.reload(); // reset gry
+        location.reload();
       }
     });
   }
