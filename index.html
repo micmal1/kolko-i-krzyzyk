@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kółko-Krzyżyk Online</title>
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 50px; }
+    #board { display: grid; grid-template-columns: repeat(3, 100px); grid-gap: 5px; justify-content: center; margin-bottom: 20px; }
+    .cell { width: 100px; height: 100px; background: #eee; display: flex; justify-content: center; align-items: center; font-size: 48px; cursor: pointer; }
+    #status { font-size: 20px; margin-bottom: 10px; }
+    input, button { font-size: 16px; padding: 5px; margin: 5px; }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<h1>Kółko-Krzyżyk Online</h1>
+<input id="nameInput" placeholder="Twoja nazwa">
+<button id="joinBtn">Dołącz</button>
+
+<div id="game" style="display:none;">
+  <h2 id="opponent"></h2>
+  <div id="board">
+    <div class="cell" data-idx="0"></div>
+    <div class="cell" data-idx="1"></div>
+    <div class="cell" data-idx="2"></div>
+    <div class="cell" data-idx="3"></div>
+    <div class="cell" data-idx="4"></div>
+    <div class="cell" data-idx="5"></div>
+    <div class="cell" data-idx="6"></div>
+    <div class="cell" data-idx="7"></div>
+    <div class="cell" data-idx="8"></div>
+  </div>
+  <h3 id="status"></h3>
+</div>
+
+<script>
+  // Wklej tutaj swój firebaseConfig
+  const firebaseConfig = {
+    apiKey: "TWOJ_API_KEY",
+    authDomain: "TWOJ_PROJEKT.firebaseapp.com",
+    databaseURL: "https://TWOJ_PROJEKT-default-rtdb.firebaseio.com",
+    projectId: "TWOJ_PROJEKT",
+    storageBucket: "TWOJ_PROJEKT.appspot.com",
+    messagingSenderId: "TWOJ_MESSAGING_SENDER_ID",
+    appId: "TWOJ_APP_ID"
+  };
+  
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  let playerName, playerSymbol, gameRef, myTurn;
+
+  document.getElementById("joinBtn").addEventListener("click", () => {
+    playerName = document.getElementById("nameInput").value || "Anon";
+    const queueRef = db.ref("queue");
+    const playerRef = queueRef.push({name: playerName});
+
+    queueRef.once("value").then(snapshot => {
+      const players = snapshot.val();
+      const keys = Object.keys(players || {});
+      if(keys.length >= 2) {
+        const [p1Key, p2Key] = keys;
+        const gameKey = db.ref("games").push().key;
+        db.ref("games/"+gameKey).set({
+          board: Array(9).fill(""),
+          turn: p1Key,
+          players: {
+            [p1Key]: players[p1Key].name,
+            [p2Key]: players[p2Key].name
+          }
+        });
+        db.ref("queue").remove();
+        startGame(gameKey, p1Key === playerRef.key ? "X" : "O");
+      }
+    });
+  });
+
+  function startGame(gameKey, symbol) {
+    playerSymbol = symbol;
+    gameRef = db.ref("games/"+gameKey);
+    myTurn = false;
+    document.getElementById("game").style.display = "block";
+
+    const cells = document.querySelectorAll(".cell");
+    cells.forEach(cell => {
+      cell.addEventListener("click", () => {
+        if(!myTurn || cell.innerText) return;
+        gameRef.child("board/"+cell.dataset.idx).set(playerSymbol);
+      });
+    });
+
+    gameRef.on("value", snapshot => {
+      const data = snapshot.val();
+      if(!data) return;
+      const board = data.board;
+      const turn = data.turn;
+      const players = data.players;
+      const opponentName = Object.values(players).filter(n => n!==playerName)[0];
+      document.getElementById("opponent").innerText = "Przeciwnik: " + (opponentName || "Czekamy...");
+
+      board.forEach((val,i)=>cells[i].innerText=val);
+      myTurn = Object.keys(players)[playerSymbol==="X"?0:1]===turn;
+      document.getElementById("status").innerText = myTurn ? "Twoja tura" : "Tura przeciwnika";
+
+      const winner = checkWinner(board);
+      if(winner){
+        if(winner==="Draw") alert("Remis!");
+        else if(winner===playerSymbol) alert("Wygrałeś!");
+        else alert("Przegrałeś!");
+        gameRef.remove();
+      }
+    });
+  }
+
+  function checkWinner(b){
+    const wins=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    for(const [a,b1,c] of wins){
+      if(b[a] && b[a]===b[b1] && b[a]===b[c]) return b[a];
+    }
+    if(b.every(cell=>cell)) return "Draw";
+    return null;
+  }
+</script>
+
+</body>
+</html>
