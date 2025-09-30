@@ -50,19 +50,26 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  let playerName, playerSymbol, gameRef, myTurn;
+  let playerName, playerSymbol, gameRef, myTurn, playerKey;
 
   document.getElementById("joinBtn").addEventListener("click", () => {
     playerName = document.getElementById("nameInput").value || "Anon";
     const queueRef = db.ref("queue");
     const playerRef = queueRef.push({name: playerName});
+    playerKey = playerRef.key;
 
-    queueRef.once("value").then(snapshot => {
-      const players = snapshot.val();
-      const keys = Object.keys(players || {});
-      if(keys.length >= 2) {
+    document.getElementById("joinBtn").disabled = true;
+    document.getElementById("nameInput").disabled = true;
+
+    // Nasłuchujemy kolejki
+    queueRef.on("value", snapshot => {
+      const players = snapshot.val() || {};
+      const keys = Object.keys(players);
+
+      if(keys.length >= 2){
         const [p1Key, p2Key] = keys;
         const gameKey = db.ref("games").push().key;
+
         db.ref("games/"+gameKey).set({
           board: Array(9).fill(""),
           turn: p1Key,
@@ -71,8 +78,9 @@
             [p2Key]: players[p2Key].name
           }
         });
-        db.ref("queue").remove();
-        startGame(gameKey, p1Key === playerRef.key ? "X" : "O");
+
+        db.ref("queue").remove(); // czyścimy kolejkę
+        startGame(gameKey, p1Key === playerKey ? "X" : "O");
       }
     });
   });
@@ -110,6 +118,7 @@
         else if(winner===playerSymbol) alert("Wygrałeś!");
         else alert("Przegrałeś!");
         gameRef.remove();
+        location.reload(); // reset gry
       }
     });
   }
